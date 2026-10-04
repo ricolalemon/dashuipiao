@@ -294,12 +294,24 @@ const STONES = [
 ];
 const dayR = seeded(hashStr('skip' + todayKey()));
 const TODAY = {stone: STONES[Math.floor(dayR() * STONES.length)], wind: Math.round((dayR() * 2 - 1) * 3 * 10) / 10};
+// 每天湖面上摆的东西：航道里几片荷叶（石头落上去就停）、两只来回游的鸭子（砸到就停）、一个花环（有一跳落进去算 5 跳）
+const LAKE = (() => {
+  const R = dayR, side = R() < .5 ? -1 : 1;
+  const ring = {x: side * (2.2 + R() * 1.6), z: 20 + R() * 20, r: 1.05};
+  const pads = [];
+  for (let z = 9 + R() * 4; z < 62; z += 5 + R() * 6) pads.push({x: (R() * 2 - 1) * 3, z, r: .55 + R() * .35, a: R() * TAU, flower: R() < .25});
+  // 鸭子放在石头贴着水面小跳的那一段，近处石头跳得高会直接飞过去
+  const ducks = [0, 1].map(k => ({z: k ? 44 + R() * 10 : 27 + R() * 8, A: 3.5 + R() * 1.5, w: .35 + R() * .25, ph: R() * TAU, hit: 0, hx: 0}));
+  return {ring, ducks, pads: pads.filter(p => Math.hypot(p.x - ring.x, p.z - ring.z) > p.r + ring.r + .6)};
+})();
+const duckX = (d, t) => d.A * Math.sin(t * d.w + d.ph);
 
 /* ================= 弹跳物理（参数在 tools/skip.mjs 里调好的） ================= */
-const P = {width: 13, drag: .03, vmin: 1.2, bmax: .5, f0: .71, f1: .25, fb: .1, c: .08, e0: .3, e1: .35, lift: .06};
+// width：角度甜区多宽；vbest / vw：超过这个速度就开始翻，越猛翻得越厉害
+const P = {width: 9, drag: .03, vmin: 1.2, bmax: .5, f0: .71, f1: .25, fb: .1, c: .08, e0: .3, e1: .35, lift: .06, vbest: 16, vw: 4.5};
 function makeStone(v, lat, tilt){
   const elev = -.05;
-  return {x: 0, y: 1, z: .4, vx: v * Math.cos(elev) * Math.sin(lat), vz: v * Math.cos(elev) * Math.cos(lat), vy: v * Math.sin(elev), q: TODAY.stone.q * Math.exp(-(((tilt - 20) / P.width) ** 2)), skips: 0, alive: true, spin: 0, tilt};
+  return {x: 0, y: 1, z: .4, vx: v * Math.cos(elev) * Math.sin(lat), vz: v * Math.cos(elev) * Math.cos(lat), vy: v * Math.sin(elev), q: TODAY.stone.q * Math.exp(-(((tilt - 20) / P.width) ** 2)) * (v > P.vbest ? Math.exp(-(((v - P.vbest) / P.vw) ** 2)) : 1), skips: 0, bonus: 0, ring: false, why: '', trail: [], alive: true, spin: 0, tilt};
 }
 function stepStone(s, dt, onSkip, onSink){
   if (!s.alive) return;
@@ -411,8 +423,8 @@ function drawWater(c, t){
     for (let x = -20 + (z * 53 % 70); x < W + 20; x += seg + 30){ const xx = x + Math.sin(t * .8 + z) * 6; c.beginPath(); c.moveTo(xx, p.y); c.lineTo(xx + seg * Math.min(1, p.k / 60), p.y); c.stroke(); }
   }
 }
-// 荷叶：固定在湖面上的几个点，用来看出石头飞了多远
-const PADS = (() => { const R = seeded(99), out = []; for (let z = 6; z < 220; z += 3 + R() * 5){ const side = R() < .5 ? -1 : 1; out.push({x: side * (2.5 + R() * 9), z, r: .45 + R() * .5, flower: R() < .18, a: R() * TAU}); } return out; })();
+// 荷叶：两边一路都有，看得出石头飞了多远；石头落在任何一片荷叶上都会停
+const PADS = (() => { const R = seeded(99), out = []; for (let z = 6; z < 220; z += 3 + R() * 5){ const side = R() < .5 ? -1 : 1; out.push({x: side * (5 + R() * 8), z, r: .45 + R() * .5, flower: R() < .18, a: R() * TAU}); } return out; })();
 function drawPad(c, p){
   const q = proj(p.x, 0, p.z);
   if (!q || q.y > H + 40 || q.x < -60 || q.x > W + 60) return;
@@ -424,6 +436,73 @@ function drawPad(c, p){
     const s = q.k * .22;
     for (let k = 0; k < 5; k++){ const a = -Math.PI / 2 + (k - 2) * .45; c.fillStyle = k % 2 ? '#f6a6c0' : '#ee86a8'; c.beginPath(); c.ellipse(q.x + Math.cos(a) * s * .4, q.y - s * .5 + Math.sin(a) * s * .3, s * .22, s * .5, a + Math.PI / 2, 0, TAU); c.fill(); }
   }
+}
+// 花环：漂在水上的一圈绿藤和小花，上面标着 +5
+function drawRing(c, g, t){
+  const q = proj(g.x, 0, g.z);
+  if (!q || q.y > H + 40 || q.x < -60 || q.x > W + 60) return;
+  const rx = q.k * g.r, ry = F * CH * g.r / (q.dz * q.dz);
+  c.strokeStyle = 'rgba(255,235,200,.3)'; c.lineWidth = Math.max(1, rx * .12); c.beginPath(); c.ellipse(q.x, q.y, rx * 1.15, ry * 1.15, 0, 0, TAU); c.stroke();
+  c.strokeStyle = '#4f8f50'; c.lineWidth = Math.max(1.2, rx * .13); c.beginPath(); c.ellipse(q.x, q.y, rx, ry, 0, 0, TAU); c.stroke();
+  const n = 12, fs = Math.max(1.2, rx * .12);
+  for (let k = 0; k < n; k++){
+    const a = k / n * TAU + t * .12;
+    c.fillStyle = ['#ff8fb1', '#ffd54f', '#ffffff', '#ff8fb1'][k % 4];
+    c.beginPath(); c.arc(q.x + Math.cos(a) * rx, q.y + Math.sin(a) * ry - fs * .3, fs, 0, TAU); c.fill();
+  }
+  if (!stone || !stone.ring){
+    const sz = Math.max(10, Math.min(22, rx * .5));
+    c.font = `800 ${sz}px "Baloo 2", sans-serif`; c.textAlign = 'center'; c.textBaseline = 'bottom';
+    c.fillStyle = 'rgba(255,248,238,.95)'; c.fillText('+5', q.x, q.y - ry - 4 + Math.sin(t * 2) * 2);
+  }
+}
+// 湖面图：从上往下看前面 70 米，荷叶、花环、鸭子在哪，石头每一跳落在哪
+const MAP = {x: W - 78, y: 168, w: 64, h: 150, zmax: 70, xmax: 7};
+function drawMap(c, t){
+  const {x: X, y: Y, w: Wd, h: Ht} = MAP, mx = x => X + Wd / 2 + x / MAP.xmax * Wd / 2, my = z => Y + Ht - z / MAP.zmax * Ht;
+  c.save();
+  c.fillStyle = 'rgba(25,30,55,.42)'; c.beginPath(); c.roundRect(X - 4, Y - 16, Wd + 8, Ht + 22, 10); c.fill();
+  c.fillStyle = 'rgba(255,248,238,.8)'; c.font = '600 10px "Noto Sans SC", sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('湖面图', X + Wd / 2, Y - 8);
+  c.beginPath(); c.roundRect(X, Y, Wd, Ht, 6); c.clip();
+  c.fillStyle = 'rgba(120,150,200,.25)'; c.fillRect(X, Y, Wd, Ht);
+  c.strokeStyle = 'rgba(255,255,255,.12)'; c.lineWidth = 1;
+  for (let z = 10; z < MAP.zmax; z += 10){ c.beginPath(); c.moveTo(X, my(z)); c.lineTo(X + Wd, my(z)); c.stroke(); }
+  for (const p of [...LAKE.pads, ...PADS]){ if (p.z > MAP.zmax + 2 || Math.abs(p.x) > MAP.xmax + 1) continue; c.fillStyle = '#5fa36f'; c.beginPath(); c.ellipse(mx(p.x), my(p.z), Math.max(2, p.r / MAP.xmax * Wd / 2), Math.max(1.6, p.r / MAP.zmax * Ht), 0, 0, TAU); c.fill(); }
+  const g = LAKE.ring;
+  c.strokeStyle = stone && stone.ring ? 'rgba(255,214,90,.9)' : '#ff8fb1'; c.lineWidth = 2; c.beginPath(); c.ellipse(mx(g.x), my(g.z), g.r / MAP.xmax * Wd / 2, Math.max(2, g.r / MAP.zmax * Ht), 0, 0, TAU); c.stroke();
+  for (const d of LAKE.ducks){ if (d.hit) continue; c.fillStyle = '#fff8ee'; c.beginPath(); c.arc(mx(duckX(d, t)), my(d.z), 2.6, 0, TAU); c.fill(); c.fillStyle = '#f29a2e'; c.fillRect(mx(duckX(d, t)) + (Math.cos(t * d.w + d.ph) >= 0 ? 2 : -4), my(d.z) - 1, 2, 1.6); }
+  if (stone && (st === 'fly' || st === 'done')){
+    c.fillStyle = 'rgba(255,255,255,.85)';
+    for (const [x, z] of stone.trail){ c.beginPath(); c.arc(mx(x), my(z), 1.3, 0, TAU); c.fill(); }
+    if (stone.alive || stone.why){ c.fillStyle = '#ffd25a'; c.beginPath(); c.arc(mx(stone.x), my(Math.min(stone.z, MAP.zmax)), 2.6, 0, TAU); c.fill(); }
+  }
+  // 岸边：你站的地方
+  c.fillStyle = '#ffd25a'; c.beginPath(); c.moveTo(mx(0), my(0) - 5); c.lineTo(mx(0) - 4, my(0)); c.lineTo(mx(0) + 4, my(0)); c.fill();
+  c.restore();
+}
+// 鸭子：白身子、橙嘴，在水面上一摇一摇地游；被砸到就扑腾着飞走
+function drawDuck(c, d, t){
+  const dir = Math.cos(t * d.w + d.ph) >= 0 ? 1 : -1;
+  let x = d.hit ? d.hx : duckX(d, t), y = 0, fly = 0;
+  if (d.hit){ fly = t - d.hit; if (fly > 3) return; y = fly * fly * 1.4 + fly; x += dir * fly * 2.5; }
+  const q = proj(x, y, d.z), w = proj(x, 0, d.z);
+  if (!q || !w || q.y > H + 40 || q.x < -60 || q.x > W + 60) return;
+  const L = q.k * .95, bob = Math.sin(t * 3 + d.ph) * L * .03;
+  if (!d.hit){ c.fillStyle = 'rgba(20,30,50,.25)'; c.beginPath(); c.ellipse(w.x, w.y + L * .05, L * .55, L * .1, 0, 0, TAU); c.fill(); }
+  c.save(); c.translate(q.x, q.y - L * .18 + bob); c.scale(dir, 1);
+  c.fillStyle = '#f6f2ea'; c.beginPath(); c.ellipse(0, 0, L * .5, L * .22, 0, 0, TAU); c.fill();
+  c.beginPath(); c.moveTo(-L * .42, -L * .05); c.lineTo(-L * .62, -L * .22); c.lineTo(-L * .38, L * .08); c.fill();
+  c.fillStyle = 'rgba(160,150,140,.35)'; c.beginPath(); c.ellipse(-L * .05, L * .02, L * .28, L * .11, -.1, 0, TAU); c.fill();
+  if (d.hit){
+    // 翅膀扑腾
+    const f = Math.sin(fly * 30) * L * .35;
+    c.fillStyle = '#ece6dc'; c.beginPath(); c.moveTo(-L * .1, -L * .1); c.lineTo(-L * .3, -L * .1 - f - L * .2); c.lineTo(L * .15, -L * .1); c.fill();
+  }
+  c.fillStyle = '#f6f2ea'; c.beginPath(); c.arc(L * .36, -L * .26, L * .17, 0, TAU); c.fill();
+  c.fillStyle = '#f29a2e'; c.beginPath(); c.moveTo(L * .5, -L * .28); c.lineTo(L * .68, -L * .23); c.lineTo(L * .5, -L * .18); c.fill();
+  c.fillStyle = '#222'; c.beginPath(); c.arc(L * .4, -L * .3, Math.max(.8, L * .028), 0, TAU); c.fill();
+  c.restore();
+  if (d.hit && fly < 1.4){ c.font = `700 ${Math.max(11, Math.min(18, L * .45))}px "Noto Sans SC", sans-serif`; c.textAlign = 'center'; c.fillStyle = `rgba(255,248,238,${1 - fly / 1.4})`; c.fillText('嘎！', q.x, q.y - L * .7 - fly * 14); }
 }
 function drawRipple(c, r, t){
   const u = (t - r.t0) / r.dur;
@@ -459,7 +538,7 @@ function drawBirds(c, t, dt){
 }
 
 /* ================= 状态 ================= */
-let st = 'aim', stone = null, ripples = [], drops = [], meterT = 0, holdT0 = 0, trail = [], camReturn = 0, lastSkipT = 0;
+let st = 'aim', stone = null, ripples = [], drops = [], pops = [], meterT = 0, holdT0 = 0, trail = [], camReturn = 0, lastSkipT = 0;
 let daily = store.get('day:' + todayKey(), {throws: [], best: 0});
 const practice = () => daily.throws.length >= 3;
 function updateHud(){
@@ -469,8 +548,8 @@ function updateHud(){
   const th = $('throws'); th.replaceChildren();
   for (let k = 0; k < 3; k++){ const t = daily.throws[k]; th.appendChild(el('i', t != null ? 'used' : '', t != null ? String(t) : '')); }
 }
-// 按住：角度表来回摆；甩出去：用最后一小段的速度决定力度和方向
-function tiltNow(t){ return 25 + 25 * Math.sin((t - holdT0) * 2.4 - Math.PI / 2); }
+// 按住：角度表来回摆，按得越久摆得越快；甩出去：用最后一小段的速度决定力度和方向
+function tiltNow(t){ const u = t - holdT0; return 25 + 25 * Math.sin(u * 3 + u * u * .6 - Math.PI / 2); }
 const TO = e => { const r = cv.getBoundingClientRect(); return {x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H, t: performance.now() / 1000}; };
 cv.addEventListener('pointerdown', e => {
   if (st !== 'aim') return;
@@ -494,6 +573,8 @@ cv.addEventListener('pointerup', e => {
 cv.addEventListener('pointercancel', () => { if (st === 'hold') st = 'aim'; });
 function throwStone(speed, lat, tilt){
   stone = makeStone(speed, lat, tilt);
+  for (const d of LAKE.ducks) d.hit = 0;
+  pops = [];
   stone.power = speed / 21;
   st = 'fly';
   ripples = []; drops = [];
@@ -502,12 +583,38 @@ function throwStone(speed, lat, tilt){
   $('result').classList.remove('show');
   Sound.whoosh(speed / 21);
 }
+function stopStone(s, why){ s.alive = false; s.why = why; s.vx = s.vy = s.vz = 0; }
 function onSkip(s){
+  const pad = [...LAKE.pads, ...PADS].find(p => Math.hypot(s.x - p.x, s.z - p.z) < p.r * .95);
+  if (pad){
+    s.skips--; stopStone(s, 'pad'); s.x = pad.x + (s.x - pad.x) * .6; s.z = pad.z + (s.z - pad.z) * .6;
+    ripples.push({x: s.x, z: s.z, t0: now(), dur: 1.8, size: .6, rings: 2});
+    Sound.pat();
+    setTimeout(finish, 1000);
+    return;
+  }
+  s.trail.push([s.x, s.z]);
+  if (!s.ring && Math.hypot(s.x - LAKE.ring.x, s.z - LAKE.ring.z) < LAKE.ring.r){ s.ring = true; s.bonus += 5; pops.push({x: s.x, z: s.z, t0: now(), text: '花环 +5'}); Sound.ring(); }
   ripples.push({x: s.x, z: s.z, t0: now(), dur: 2.6, size: .5 + Math.min(1.2, Math.abs(s.vy) * .25), rings: 3});
   for (let k = 0; k < 6; k++) drops.push({x: s.x, y: 0, z: s.z, vx: (Math.random() - .5) * 1.5, vy: 1 + Math.random() * 2, vz: s.vz * .3 + (Math.random() - .5), life: .6});
-  const b = $('skips'); b.textContent = s.skips; b.classList.add('pop'); setTimeout(() => b.classList.remove('pop'), 110);
+  const b = $('skips'); b.textContent = s.skips + s.bonus; b.classList.add('pop'); setTimeout(() => b.classList.remove('pop'), 110);
   Sound.skip(s.skips);
   lastSkipT = now();
+}
+// 鸭子：石头贴着水面飞过鸭子所在的地方就砸到了
+function hitDuck(s){
+  const t = now();
+  for (const d of LAKE.ducks){
+    if (d.hit || s.y > .5 || Math.abs(s.z - d.z) > .45) continue;
+    const x = duckX(d, t);
+    if (Math.abs(s.x - x) < .75){
+      d.hit = t; d.hx = x; stopStone(s, 'duck');
+      ripples.push({x: s.x, z: s.z, t0: t, dur: 2.4, size: 1, rings: 3});
+      Sound.quack();
+      setTimeout(finish, 1300);
+      return;
+    }
+  }
 }
 function onSink(s){
   ripples.push({x: s.x, z: s.z, t0: now(), dur: 3.5, size: 1.4, rings: 4});
@@ -517,12 +624,13 @@ function onSink(s){
 }
 const now = () => performance.now() / 1000;
 function finish(){
-  const skips = stone.skips, dist = Math.max(0, stone.z);
-  const rating = skips === 0 ? '扑通' : skips < 5 ? '还行' : skips < 12 ? '不错' : skips < 20 ? '漂亮' : skips < 28 ? '高手' : '水上漂';
+  const skips = stone.skips + stone.bonus, dist = Math.max(0, stone.z);
+  const rating = stone.why === 'pad' ? '落在荷叶上了' : stone.why === 'duck' ? '砸到鸭子了' : skips === 0 ? '扑通' : skips < 5 ? '还行' : skips < 12 ? '不错' : skips < 20 ? '漂亮' : skips < 28 ? '高手' : '水上漂';
   const r = $('result');
   r.querySelector('b').textContent = `${skips} 跳 · ${rating}`;
-  const tiltTxt = Math.abs(stone.tilt - 20) < 3 ? '角度正好' : stone.tilt < 20 ? `角度 ${stone.tilt.toFixed(0)}°，太平了` : `角度 ${stone.tilt.toFixed(0)}°，太斜了`;
-  r.querySelector('span').textContent = `${dist.toFixed(1)} 米 · 力度 ${Math.round(stone.power * 100)}% · ${tiltTxt}`;
+  const tiltTxt = Math.abs(stone.tilt - 20) < 2 ? '角度正好' : stone.tilt < 20 ? `角度 ${stone.tilt.toFixed(0)}°，太平了` : `角度 ${stone.tilt.toFixed(0)}°，太斜了`;
+  const powTxt = stone.power > .86 ? '用力过猛' : stone.power < .62 ? '力气小了' : '力度正好';
+  r.querySelector('span').textContent = `${dist.toFixed(1)} 米 · ${powTxt} ${Math.round(stone.power * 100)}% · ${tiltTxt}${stone.ring ? ' · 穿过花环' : ''}`;
   r.classList.add('show');
   const best = store.get('best', {skips: 0, dist: 0});
   let rec = false;
@@ -532,7 +640,7 @@ function finish(){
     daily.best = Math.max(daily.best, skips);
     store.set('day:' + todayKey(), daily);
     // 排行榜：今天三投里最好的一投，跳数一样比漂了多远
-    MiniBoard.submit('', {a: skips, b: Math.round(dist * 10) / 10, shown: `${skips} 跳`, extra: `${dist.toFixed(1)} 米`});
+    MiniBoard.submit('', {a: skips, b: Math.round(dist * 10) / 10, shown: `${skips} 跳`, extra: `${dist.toFixed(1)} 米${stone.ring ? ' · 花环' : ''}`});
     if (practice()) setTimeout(summary, 1600);
   }
   if (rec) Sound.record();
@@ -562,7 +670,7 @@ function help(){
   const card = el('div', 'card');
   card.appendChild(el('h2', '', '怎么打水漂'));
   const ul = el('ul');
-  for (const t of ['按住屏幕，下面的角度表会来回摆。', '手指往上一甩把石头扔出去：甩得越快力度越大，往左往右甩会偏。', '松手那一刻的角度很关键，20° 左右最好（绿色那一段），太平太斜都会很快沉下去。', '每天有一块不一样的石头、一阵不一样的风。三投里最好的一次算今天的成绩，之后可以随便扔。']) ul.appendChild(el('li', '', t));
+  for (const t of ['按住屏幕，下面的角度表会来回摆，按得越久摆得越快。', '松手那一刻的角度很关键，20° 左右最好（绿色那一小段），差几度就少跳好多。', '手指往上一甩把石头扔出去，往左往右甩会偏。力气要刚好，七八成最好，用力过猛石头会翻。', '湖里有荷叶和鸭子：石头落在荷叶上、砸到鸭子就停了。花环里落一跳算 5 跳。右上角的湖面图能看清远处，往左往右甩一点就能绕开。', '每天有一块不一样的石头、一阵不一样的风，湖面也不一样。三投里最好的一次算今天的成绩，之后可以随便扔。']) ul.appendChild(el('li', '', t));
   const ok = el('button', 'btn', '去湖边'); ok.type = 'button'; ok.addEventListener('click', closeModal);
   card.append(ul, ok);
   openModal(card);
@@ -579,7 +687,7 @@ function frame(nowMs){
   if (st === 'fly' && stone){
     const sub = 8;
     // 物理时间比真实快一点，好的一投不用等太久
-    for (let k = 0; k < sub; k++) stepStone(stone, dt * 1.35 / sub, onSkip, onSink);
+    for (let k = 0; k < sub; k++){ stepStone(stone, dt * 1.35 / sub, onSkip, onSink); if (stone.alive) hitDuck(stone); }
     $('dist').textContent = Math.max(0, stone.z).toFixed(1) + ' 米';
   }
   // 镜头：飞的时候跟着石头，扔完慢慢回到岸边
@@ -598,13 +706,15 @@ function draw(t, dt){
   c.setTransform(S, 0, 0, S, 0, 0);
   drawBirds(c, t, dt);
   drawWater(c, t);
-  const pads = PADS.filter(p => p.z > cam.z + .3).sort((a, b) => b.z - a.z);
-  for (const p of pads) drawPad(c, p);
+  const items = [...PADS, ...LAKE.pads].map(p => ({z: p.z, f: () => drawPad(c, p)}));
+  items.push({z: LAKE.ring.z, f: () => drawRing(c, LAKE.ring, t)});
+  for (const d of LAKE.ducks) items.push({z: d.z, f: () => drawDuck(c, d, t)});
+  for (const it of items.filter(i => i.z > cam.z + .3).sort((a, b) => b.z - a.z)) it.f();
   ripples = ripples.filter(r => drawRipple(c, r, now()));
   for (const d of drops){ const q = proj(d.x, d.y, d.z); if (!q) continue; c.fillStyle = `rgba(235,245,255,${Math.min(1, d.life * 2)})`; c.beginPath(); c.arc(q.x, q.y, Math.max(.8, q.k * .03), 0, TAU); c.fill(); }
   if (stone && (st === 'fly' || st === 'done')){
     const sh = proj(stone.x, 0, stone.z), q = proj(stone.x, stone.y, stone.z);
-    if (q && stone.alive){
+    if (q && (stone.alive || stone.why === 'pad')){
       if (sh){ c.fillStyle = 'rgba(20,30,50,.3)'; c.beginPath(); c.ellipse(sh.x, sh.y, Math.max(1.5, sh.k * .06), Math.max(.6, F * CH * .06 / (sh.dz * sh.dz)), 0, 0, TAU); c.fill(); }
       const r = Math.max(3.4, q.k * .07);
       c.fillStyle = 'rgba(255,240,220,.35)'; c.beginPath(); c.arc(q.x, q.y, r * 2.2, 0, TAU); c.fill();
@@ -614,7 +724,15 @@ function draw(t, dt){
       c.restore();
     }
   }
+  pops = pops.filter(p => now() - p.t0 < 1.4);
+  for (const p of pops){
+    const u = (now() - p.t0) / 1.4, q = proj(p.x, .4 + u * 1.2, p.z);
+    if (!q) continue;
+    c.font = '800 20px "Baloo 2", "Noto Sans SC", sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillStyle = `rgba(255,214,90,${1 - u})`; c.fillText(p.text, q.x, q.y);
+  }
   drawReeds(c, t);
+  drawMap(c, t);
   if (st === 'aim' || st === 'hold') drawHand(c, t);
 }
 // 手里的石头和角度表
@@ -629,14 +747,14 @@ function drawHand(c, t){
   c.fillStyle = 'rgba(255,255,255,.18)'; c.beginPath(); c.ellipse(-12, -7, 22, 6, 0, 0, TAU); c.fill();
   c.strokeStyle = 'rgba(0,0,0,.2)'; c.lineWidth = 1.5; c.beginPath(); c.ellipse(0, 0, 54, 20, 0, 0, TAU); c.stroke();
   c.restore();
-  // 角度表：0 到 50 度的一段弧，20 度附近是绿色
+  // 角度表：0 到 50 度的一段弧，17 到 23 度是绿色
   const ax = cx, ay = cy + 6, R = 92;
   c.save();
   c.lineCap = 'round';
   c.strokeStyle = 'rgba(255,248,238,.3)'; c.lineWidth = 10;
   c.beginPath(); c.arc(ax, ay, R, -50 * Math.PI / 180, 0); c.stroke();
   c.strokeStyle = 'rgba(120,220,150,.85)';
-  c.beginPath(); c.arc(ax, ay, R, -25 * Math.PI / 180, -15 * Math.PI / 180); c.stroke();
+  c.beginPath(); c.arc(ax, ay, R, -23 * Math.PI / 180, -17 * Math.PI / 180); c.stroke();
   const a = -tilt * Math.PI / 180;
   c.strokeStyle = '#fff8ee'; c.lineWidth = 3;
   c.beginPath(); c.moveTo(ax + Math.cos(a) * (R - 22), ay + Math.sin(a) * (R - 22)); c.lineTo(ax + Math.cos(a) * (R + 10), ay + Math.sin(a) * (R + 10)); c.stroke();
@@ -670,6 +788,9 @@ const Sound = (() => {
   A.plop = () => { tone(260, .3, .2, 'sine', 0, 70); noise(.4, .18, 1200, 300, 'lowpass'); };
   A.whoosh = p => noise(.35, .12 + p * .1, 600, 3000);
   A.record = () => [784, 988, 1175, 1568].forEach((f, k) => tone(f, .6, .07, 'triangle', .3 + k * .1));
+  A.pat = () => { tone(150, .18, .16, 'sine', 0, 80); noise(.12, .1, 800, 300, 'lowpass'); };
+  A.quack = () => { tone(560, .13, .07, 'sawtooth', 0, 420); tone(520, .16, .07, 'sawtooth', .17, 380); };
+  A.ring = () => [1047, 1319, 1568, 2093].forEach((f, k) => tone(f, .5, .06, 'triangle', k * .07));
   A.bird = () => { const b = 2200 + Math.random() * 800; tone(b, .08, .03, 'sine', 0, b * 1.3); tone(b * 1.1, .1, .03, 'sine', .12, b * .9); };
   A.set = v => { A.on = v; store.set('sound', v); if (out) out.gain.value = v ? .8 : 0; };
   return A;
@@ -684,7 +805,7 @@ layout();
 updateHud();
 requestAnimationFrame(frame);
 if (!store.get('seenHelp', false)){ store.set('seenHelp', true); help(); }
-if (['localhost', '127.0.0.1'].includes(location.hostname)) window.__s = {throwStone, get stone(){ return stone; }, get st(){ return st; }, TODAY, makeStone, stepStone, shot: () => cv.toDataURL('image/jpeg', .8)};
+if (['localhost', '127.0.0.1'].includes(location.hostname)) window.__s = {LAKE, PADS, duckX, throwStone, get stone(){ return stone; }, get st(){ return st; }, TODAY, makeStone, stepStone, shot: () => cv.toDataURL('image/jpeg', .8)};
 })();
 </script>
 
