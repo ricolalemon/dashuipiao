@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta charset="utf-8">
+<title>打水漂</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600;900&display=swap">
+<style>
+/* 黄昏的湖面，远处是水墨的山。安安静静的一个游戏，外观固定，不跟系统深色走 */
+:root{
+  color-scheme:light;
+  --ink:#2b2630;
+  --paper:#fbf4ea;
+  --soft:rgba(43,38,48,.65);
+  --seal:#b8322a;
+  --font-brush:"Ma Shan Zheng","KaiTi",serif;
+  --font-body:"Noto Serif SC","Songti SC",serif;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%}
+body{overflow:hidden;color:var(--ink);font-family:var(--font-body);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;touch-action:none;-webkit-user-select:none;user-select:none;background:#2a3348}
+button{font:inherit;color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+button:focus-visible{outline:2px solid var(--seal);outline-offset:3px}
+#stage{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%)}
+#cv{display:block;width:100%;height:100%;touch-action:none}
+#hud{position:absolute;left:0;top:0;width:420px;height:740px;transform-origin:0 0;pointer-events:none}
+#hud > *{pointer-events:auto}
+.top{position:absolute;left:12px;right:12px;top:12px;display:flex;align-items:flex-start;gap:8px;pointer-events:none}
+.top > *{pointer-events:auto}
+.title{font-family:var(--font-brush);font-size:30px;line-height:1;color:#fff8ee;text-shadow:0 2px 6px rgba(60,30,40,.45)}
+.sub{font-size:12px;color:rgba(255,248,238,.85);text-shadow:0 1px 3px rgba(0,0,0,.4)}
+.grow{flex:1}
+.ibtn{width:36px;height:36px;border:0;border-radius:50%;background:rgba(255,248,238,.8);box-shadow:0 3px 10px rgba(0,0,0,.18);font-size:14px;display:grid;place-items:center}
+.count{position:absolute;left:0;right:0;top:96px;text-align:center;pointer-events:none;color:#fff8ee;text-shadow:0 3px 10px rgba(40,20,40,.45)}
+.count b{display:block;font-family:var(--font-brush);font-weight:400;font-size:84px;line-height:1;transition:transform .12s}
+.count b.pop{transform:scale(1.18)}
+.count span{font-size:15px}
+.cond{position:absolute;left:12px;top:64px;display:flex;gap:6px;pointer-events:none}
+.cond span{padding:2px 10px;border-radius:999px;background:rgba(255,248,238,.78);font-size:12px;font-weight:600}
+.throws{position:absolute;right:12px;top:64px;display:flex;gap:4px;pointer-events:none}
+.throws i{width:22px;height:22px;border-radius:50%;background:rgba(255,248,238,.4);font-style:normal;font-size:11px;font-weight:700;display:grid;place-items:center;color:var(--ink)}
+.throws i.used{background:rgba(255,248,238,.92)}
+.result{position:absolute;left:50%;top:250px;transform:translate(-50%,10px);opacity:0;transition:all .4s;text-align:center;pointer-events:none;white-space:nowrap}
+.result.show{opacity:1;transform:translate(-50%,0)}
+.result b{display:inline-block;padding:4px 20px;border-radius:999px;background:rgba(251,244,234,.92);font-family:var(--font-brush);font-weight:400;font-size:30px;box-shadow:0 8px 20px rgba(0,0,0,.2)}
+.result span{display:block;margin-top:6px;color:#fff8ee;font-size:14px;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+.hint{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);padding:6px 16px;border-radius:999px;background:rgba(43,38,48,.72);color:#fff8ee;font-size:13px;white-space:nowrap;pointer-events:none;transition:opacity .4s}
+
+#modal{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(30,20,40,.45)}
+.card{width:min(360px,100%);max-height:calc(100% - 16px);overflow:auto;border-radius:20px;background:var(--paper);box-shadow:0 24px 60px rgba(0,0,0,.4);padding:22px 20px 20px;display:flex;flex-direction:column;gap:12px;text-align:center;animation:pop .35s cubic-bezier(.2,.9,.3,1.2)}
+@keyframes pop{from{transform:translateY(14px) scale(.96);opacity:0}}
+.card h2{margin:0;font-family:var(--font-brush);font-weight:400;font-size:34px}
+.card p{margin:0}
+.card .n{font-family:var(--font-brush);font-size:64px;line-height:1;color:var(--seal)}
+.card .small{font-size:12px;color:var(--soft)}
+.card ul{margin:0;padding-left:1.2em;text-align:left;font-size:14px;display:flex;flex-direction:column;gap:6px}
+.btn{border:0;border-radius:12px;padding:12px 18px;font-weight:600;font-size:16px;background:var(--ink);color:#fbf4ea}
+.btn.ghost{background:#fff;color:var(--ink);box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)}
+.btn:active{transform:translateY(1px)}
+.row{display:flex;gap:8px}
+.row > *{flex:1}
+@media (prefers-reduced-motion:reduce){.card{animation:none}}
+</style>
+
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <div id="hud">
+    <div class="top">
+      <div><div class="title">打水漂</div><div class="sub" id="sub"></div></div>
+      <span class="grow"></span>
+      <button class="ibtn" id="btnHelp" type="button" aria-label="怎么玩">?</button>
+      <button class="ibtn" id="btnSound" type="button" aria-label="声音">🔊</button>
+    </div>
+    <div class="cond" id="cond"></div>
+    <div class="throws" id="throws"></div>
+    <div class="count" id="count" hidden><b id="skips">0</b><span id="dist"></span></div>
+    <div class="result" id="result"><b></b><span></span></div>
+    <div class="hint" id="hint">按住石头，看角度，往前一甩</div>
+  </div>
+</div>
+<div id="modal" hidden></div>
+
+<script>
+(async () => {
+'use strict';
+const $ = id => document.getElementById(id);
+const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
+const TAU = Math.PI * 2;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const store = {
+  get(k, d){ try { const v = localStorage.getItem('dsp:' + k); return v == null ? d : JSON.parse(v); } catch (e){ return d; } },
+  set(k, v){ try { localStorage.setItem('dsp:' + k, JSON.stringify(v)); } catch (e){} }
+};
+function seeded(seed){ let a = seed >>> 0; return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function hashStr(s){ let h = 2166136261; for (const ch of s){ h ^= ch.codePointAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
+const W = 420, H = 740, HOR = 292, F = 380, CH = 1.7;
+
+/* ================= 今天的石头和风 ================= */
+const STONES = [
+  {name: '扁平青石', q: 1, windK: .5, col: ['#7d8a92', '#4c565e']},
+  {name: '鹅卵石', q: .86, windK: .3, col: ['#b5a79a', '#7a6c62']},
+  {name: '碎瓦片', q: 1.06, windK: 1, col: ['#8a7f86', '#5a4f58']},
+  {name: '小石板', q: .95, windK: .6, col: ['#9a9286', '#5e584e']}
+];
+const dayR = seeded(hashStr('skip' + todayKey()));
+const TODAY = {stone: STONES[Math.floor(dayR() * STONES.length)], wind: Math.round((dayR() * 2 - 1) * 3 * 10) / 10};
+
+/* ================= 弹跳物理（参数在 tools/skip.mjs 里调好的） ================= */
+const P = {width: 13, drag: .03, vmin: 1.2, bmax: .5, f0: .71, f1: .25, fb: .1, c: .08, e0: .3, e1: .35, lift: .06};
+function makeStone(v, lat, tilt){
+  const elev = -.05;
+  return {x: 0, y: 1, z: .4, vx: v * Math.cos(elev) * Math.sin(lat), vz: v * Math.cos(elev) * Math.cos(lat), vy: v * Math.sin(elev), q: TODAY.stone.q * Math.exp(-(((tilt - 20) / P.width) ** 2)), skips: 0, alive: true, spin: 0, tilt};
+}
+function stepStone(s, dt, onSkip, onSink){
+  if (!s.alive) return;
+  s.vy -= 9.8 * dt;
+  s.vz *= 1 - P.drag * dt;
+  s.vx += TODAY.wind * TODAY.stone.windK * .25 * dt;
+  s.x += s.vx * dt; s.y += s.vy * dt; s.z += s.vz * dt;
+  s.spin += dt * 40;
+  if (s.y <= 0 && s.vy < 0){
+    const vh = Math.hypot(s.vx, s.vz), beta = Math.atan2(-s.vy, vh);
+    if (vh < P.vmin || beta > P.bmax || s.q < .12){ s.alive = false; s.y = 0; onSink(s); return; }
+    const f = P.f0 + P.f1 * s.q - P.fb * beta;
+    s.vx *= f; s.vz *= f;
+    const vh2 = Math.hypot(s.vx, s.vz), k = Math.max(0, vh2 - P.c) / (vh2 || 1);
+    s.vx *= k; s.vz *= k;
+    s.vy = -s.vy * (P.e0 + P.e1 * s.q) + Math.hypot(s.vx, s.vz) * P.lift * s.q;
+    s.y = 0;
+    s.skips++;
+    onSkip(s);
+  }
+}
+
+/* ================= 画面 ================= */
+const cv = $('cv'), ctx = cv.getContext('2d');
+let S = 1, SCALE = 1, bg = null;
+const cam = {x: 0, z: -3};
+function proj(x, y, z){ const dz = z - cam.z; if (dz < .25) return null; return {x: W / 2 + F * (x - cam.x) / dz, y: HOR + F * (CH - y) / dz, k: F / dz, dz}; }
+function layout(){
+  SCALE = Math.min(innerWidth / W, innerHeight / H);
+  const d = Math.min(devicePixelRatio || 1, 2.5);
+  S = SCALE * d;
+  const st = $('stage');
+  st.style.width = W * SCALE + 'px'; st.style.height = H * SCALE + 'px';
+  cv.width = Math.round(W * S); cv.height = Math.round(H * S);
+  $('hud').style.transform = `scale(${SCALE})`;
+  drawBg();
+}
+addEventListener('resize', layout);
+const SUN = {x: 300, y: HOR - 34};
+function ridge(c, R, y0, amp, rough, col, mist){
+  c.beginPath(); c.moveTo(-10, HOR + 2);
+  let y = y0;
+  const pts = [];
+  for (let x = -10; x <= W + 10; x += 6){
+    const n = Math.sin(x * .012 + R() * .2) * amp + Math.sin(x * .031 + 2) * amp * .45 + Math.sin(x * .09) * amp * .12 * rough + (R() - .5) * rough * 3;
+    pts.push([x, y0 - Math.max(0, n + amp * .4)]);
+  }
+  for (const [x, yy] of pts) c.lineTo(x, yy);
+  c.lineTo(W + 10, HOR + 2); c.closePath();
+  const g = c.createLinearGradient(0, y0 - amp * 1.5, 0, HOR);
+  g.addColorStop(0, col); g.addColorStop(1, mist);
+  c.fillStyle = g; c.fill();
+}
+function drawBg(){
+  bg = document.createElement('canvas');
+  bg.width = cv.width; bg.height = Math.round((HOR + 4) * S);
+  const c = bg.getContext('2d');
+  c.scale(S, S);
+  const sky = c.createLinearGradient(0, 0, 0, HOR);
+  sky.addColorStop(0, '#5d6f98'); sky.addColorStop(.45, '#c99aa6'); sky.addColorStop(.8, '#f4c39a'); sky.addColorStop(1, '#fbe2c0');
+  c.fillStyle = sky; c.fillRect(0, 0, W, HOR + 4);
+  const sg = c.createRadialGradient(SUN.x, SUN.y, 4, SUN.x, SUN.y, 150);
+  sg.addColorStop(0, 'rgba(255,240,210,.95)'); sg.addColorStop(.12, 'rgba(255,214,160,.7)'); sg.addColorStop(1, 'rgba(255,200,150,0)');
+  c.fillStyle = sg; c.fillRect(0, 0, W, HOR + 4);
+  c.fillStyle = '#fff3dc'; c.beginPath(); c.arc(SUN.x, SUN.y, 17, 0, TAU); c.fill();
+  // 云丝
+  c.strokeStyle = 'rgba(255,230,220,.35)'; c.lineCap = 'round';
+  for (const [x, y, l, w] of [[60, 90, 120, 3], [140, 110, 160, 2], [260, 70, 140, 3], [300, 140, 100, 2]]){ c.lineWidth = w; c.beginPath(); c.moveTo(x, y); c.quadraticCurveTo(x + l / 2, y - 6, x + l, y); c.stroke(); }
+  const R = seeded(7);
+  // 山：越远越淡
+  ridge(c, R, HOR - 40, 46, 1, 'rgba(120,110,150,.55)', 'rgba(230,200,190,.35)');
+  ridge(c, R, HOR - 18, 40, 1.2, 'rgba(85,80,110,.7)', 'rgba(220,190,180,.45)');
+  // 小塔
+  const px = 96, py = HOR - 66;
+  c.fillStyle = 'rgba(60,55,80,.8)';
+  for (let k = 0; k < 5; k++){ const w = 14 - k * 2, y = py - k * 9; c.fillRect(px - w / 2, y - 6, w, 6); c.beginPath(); c.moveTo(px - w / 2 - 4, y - 5); c.lineTo(px + w / 2 + 4, y - 5); c.lineTo(px, y - 9); c.closePath(); c.fill(); }
+  c.fillRect(px - .8, py - 56, 1.6, 8);
+  ridge(c, R, HOR - 2, 26, 1.5, 'rgba(55,52,72,.85)', 'rgba(200,170,170,.55)');
+  // 山脚的雾
+  const mist = c.createLinearGradient(0, HOR - 30, 0, HOR + 2);
+  mist.addColorStop(0, 'rgba(250,225,210,0)'); mist.addColorStop(1, 'rgba(250,225,210,.7)');
+  c.fillStyle = mist; c.fillRect(0, HOR - 30, W, 34);
+  // 远处的小船
+  c.fillStyle = 'rgba(50,45,60,.8)';
+  c.beginPath(); c.moveTo(212, HOR + 1); c.quadraticCurveTo(226, HOR + 5, 240, HOR + 1); c.lineTo(212, HOR + 1); c.fill();
+  c.fillRect(224, HOR - 9, 1.5, 9); c.beginPath(); c.arc(229, HOR - 4, 2, 0, TAU); c.fill();
+  c.strokeStyle = 'rgba(50,45,60,.7)'; c.lineWidth = .8; c.beginPath(); c.moveTo(230, HOR - 5); c.lineTo(246, HOR - 14); c.stroke();
+}
+// 水面
+function drawWater(c, t){
+  const g = c.createLinearGradient(0, HOR, 0, H);
+  g.addColorStop(0, '#e9c3ae'); g.addColorStop(.12, '#9fa5bf'); g.addColorStop(.5, '#4f6488'); g.addColorStop(1, '#273754');
+  c.fillStyle = g; c.fillRect(0, HOR, W, H - HOR);
+  // 太阳在水里的倒影
+  for (let k = 0; k < 40; k++){
+    const u = k / 40, y = HOR + 2 + u * u * 260, wobble = Math.sin(t * 2 + k * 1.7) * (4 + u * 16);
+    c.fillStyle = `rgba(255,226,180,${(1 - u) * .55})`;
+    c.fillRect(SUN.x - (6 + u * 26) + wobble, y, (12 + u * 52) * (.6 + .4 * Math.sin(t * 3 + k)), 1.6 + u * 2);
+  }
+  // 波纹：在世界里每隔一段距离一条，镜头往前走时跟着动
+  const z0 = Math.floor(cam.z / 1.2) * 1.2;
+  for (let z = z0 + 1.2; z < cam.z + 120; z += 1.2){
+    const p = proj(0, 0, z);
+    if (!p || p.y > H) continue;
+    const a = Math.min(.22, 6 / p.dz) * (.6 + .4 * Math.sin(z * 3.1 + t * 1.3));
+    c.strokeStyle = `rgba(230,235,255,${a})`;
+    c.lineWidth = Math.max(.6, 1.6 * p.k / 120);
+    const seg = 40 + (z * 37 % 60);
+    for (let x = -20 + (z * 53 % 70); x < W + 20; x += seg + 30){ const xx = x + Math.sin(t * .8 + z) * 6; c.beginPath(); c.moveTo(xx, p.y); c.lineTo(xx + seg * Math.min(1, p.k / 60), p.y); c.stroke(); }
+  }
+}
+// 荷叶：固定在湖面上的几个点，用来看出石头飞了多远
+const PADS = (() => { const R = seeded(99), out = []; for (let z = 6; z < 220; z += 3 + R() * 5){ const side = R() < .5 ? -1 : 1; out.push({x: side * (2.5 + R() * 9), z, r: .45 + R() * .5, flower: R() < .18, a: R() * TAU}); } return out; })();
+function drawPad(c, p){
+  const q = proj(p.x, 0, p.z);
+  if (!q || q.y > H + 40 || q.x < -60 || q.x > W + 60) return;
+  const rx = q.k * p.r, ry = F * CH * p.r / (q.dz * q.dz);
+  c.fillStyle = 'rgba(20,40,40,.25)'; c.beginPath(); c.ellipse(q.x + rx * .1, q.y + ry * .3, rx, ry, 0, 0, TAU); c.fill();
+  c.fillStyle = '#4f8f63'; c.beginPath(); c.ellipse(q.x, q.y, rx, ry, 0, p.a, p.a + TAU - .5); c.lineTo(q.x, q.y); c.fill();
+  c.strokeStyle = 'rgba(160,210,170,.5)'; c.lineWidth = Math.max(.5, rx * .04); c.beginPath(); c.ellipse(q.x, q.y, rx * .7, ry * .7, 0, p.a, p.a + TAU - .5); c.stroke();
+  if (p.flower){
+    const s = q.k * .22;
+    for (let k = 0; k < 5; k++){ const a = -Math.PI / 2 + (k - 2) * .45; c.fillStyle = k % 2 ? '#f6a6c0' : '#ee86a8'; c.beginPath(); c.ellipse(q.x + Math.cos(a) * s * .4, q.y - s * .5 + Math.sin(a) * s * .3, s * .22, s * .5, a + Math.PI / 2, 0, TAU); c.fill(); }
+  }
+}
+function drawRipple(c, r, t){
+  const u = (t - r.t0) / r.dur;
+  if (u >= 1) return false;
+  const q = proj(r.x, 0, r.z);
+  if (!q) return true;
+  for (let k = 0; k < r.rings; k++){
+    const uu = u - k * .12; if (uu <= 0) continue;
+    const rad = r.size * (.15 + uu * 1.2);
+    c.strokeStyle = `rgba(240,245,255,${(1 - uu) * .55})`;
+    c.lineWidth = Math.max(.6, q.k * .025);
+    c.beginPath(); c.ellipse(q.x, q.y, q.k * rad, F * CH * rad / (q.dz * q.dz), 0, 0, TAU); c.stroke();
+  }
+  return true;
+}
+const reeds = (() => { const R = seeded(3); return Array.from({length: 22}, (_, k) => ({x: k < 11 ? R() * 70 - 10 : W - R() * 70 + 10, h: 120 + R() * 140, bend: (R() - .5) * 30, w: 2 + R() * 2.5, ph: R() * TAU, head: R() < .5})); })();
+function drawReeds(c, t){
+  for (const r of reeds){
+    const sway = Math.sin(t * 1.2 + r.ph) * 6;
+    c.strokeStyle = 'rgba(30,30,36,.85)'; c.lineWidth = r.w; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(r.x, H + 10); c.quadraticCurveTo(r.x + r.bend * .4, H - r.h * .5, r.x + r.bend + sway, H - r.h); c.stroke();
+    if (r.head){ c.fillStyle = 'rgba(70,55,45,.85)'; c.beginPath(); c.ellipse(r.x + r.bend + sway, H - r.h - 10, 3.5, 13, (r.bend + sway) * .01, 0, TAU); c.fill(); }
+  }
+}
+const birds = Array.from({length: 4}, (_, k) => ({x: -40 - k * 70, y: 70 + k * 22, s: 14 + k * 3, v: 12 + k * 3, ph: k}));
+function drawBirds(c, t, dt){
+  c.strokeStyle = 'rgba(40,35,50,.75)'; c.lineWidth = 1.4;
+  for (const b of birds){
+    b.x += b.v * dt; if (b.x > W + 60) b.x = -60;
+    const f = Math.sin(t * 6 + b.ph) * .5;
+    c.beginPath(); c.moveTo(b.x - b.s * .5, b.y - b.s * .18 * f); c.quadraticCurveTo(b.x - b.s * .2, b.y - b.s * .2, b.x, b.y); c.quadraticCurveTo(b.x + b.s * .2, b.y - b.s * .2, b.x + b.s * .5, b.y - b.s * .18 * f); c.stroke();
+  }
+}
+
+/* ================= 状态 ================= */
+let st = 'aim', stone = null, ripples = [], drops = [], meterT = 0, holdT0 = 0, trail = [], camReturn = 0, lastSkipT = 0;
+let daily = store.get('day:' + todayKey(), {throws: [], best: 0});
+const practice = () => daily.throws.length >= 3;
+function updateHud(){
+  $('sub').textContent = practice() ? '今日三投扔完了 · 随便扔' : `今日第 ${daily.throws.length + 1} 投 · 一共三投`;
+  const cd = $('cond'); cd.replaceChildren();
+  cd.append(el('span', '', '🪨 ' + TODAY.stone.name), el('span', '', TODAY.wind === 0 ? '无风' : `风 ${TODAY.wind > 0 ? '→' : '←'} ${Math.abs(TODAY.wind).toFixed(1)}`));
+  const th = $('throws'); th.replaceChildren();
+  for (let k = 0; k < 3; k++){ const t = daily.throws[k]; th.appendChild(el('i', t != null ? 'used' : '', t != null ? String(t) : '')); }
+}
+// 按住：角度表来回摆；甩出去：用最后一小段的速度决定力度和方向
+function tiltNow(t){ return 25 + 25 * Math.sin((t - holdT0) * 2.4 - Math.PI / 2); }
+const TO = e => { const r = cv.getBoundingClientRect(); return {x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H, t: performance.now() / 1000}; };
+cv.addEventListener('pointerdown', e => {
+  if (st !== 'aim') return;
+  Sound.unlock();
+  cv.setPointerCapture(e.pointerId);
+  st = 'hold'; holdT0 = performance.now() / 1000; trail = [TO(e)];
+  $('hint').style.opacity = 0;
+});
+cv.addEventListener('pointermove', e => { if (st === 'hold'){ trail.push(TO(e)); if (trail.length > 40) trail.shift(); } });
+cv.addEventListener('pointerup', e => {
+  if (st !== 'hold') return;
+  const now = performance.now() / 1000, p = TO(e);
+  trail.push(p);
+  const recent = trail.filter(q => now - q.t < .12);
+  const a = recent[0] || trail[0];
+  const dt = Math.max(.016, p.t - a.t), vy = (p.y - a.y) / dt, vx = (p.x - a.x) / dt;
+  if (vy > -250 || p.y - trail[0].y > -30){ st = 'aim'; $('hint').textContent = '要往前甩出去，手指往上划'; $('hint').style.opacity = 1; return; }
+  const speed = clamp(-vy / 75, 4, 21), lat = clamp(Math.atan2(vx, -vy), -.3, .3), tilt = tiltNow(now);
+  throwStone(speed, lat, tilt);
+});
+cv.addEventListener('pointercancel', () => { if (st === 'hold') st = 'aim'; });
+function throwStone(speed, lat, tilt){
+  stone = makeStone(speed, lat, tilt);
+  stone.power = speed / 21;
+  st = 'fly';
+  ripples = []; drops = [];
+  $('count').hidden = false; $('skips').textContent = '0'; $('dist').textContent = '';
+  $('hint').style.opacity = 0;
+  $('result').classList.remove('show');
+  Sound.whoosh(speed / 21);
+}
+function onSkip(s){
+  ripples.push({x: s.x, z: s.z, t0: now(), dur: 2.6, size: .5 + Math.min(1.2, Math.abs(s.vy) * .25), rings: 3});
+  for (let k = 0; k < 6; k++) drops.push({x: s.x, y: 0, z: s.z, vx: (Math.random() - .5) * 1.5, vy: 1 + Math.random() * 2, vz: s.vz * .3 + (Math.random() - .5), life: .6});
+  const b = $('skips'); b.textContent = s.skips; b.classList.add('pop'); setTimeout(() => b.classList.remove('pop'), 110);
+  Sound.skip(s.skips);
+  lastSkipT = now();
+}
+function onSink(s){
+  ripples.push({x: s.x, z: s.z, t0: now(), dur: 3.5, size: 1.4, rings: 4});
+  for (let k = 0; k < 18; k++) drops.push({x: s.x, y: 0, z: s.z, vx: (Math.random() - .5) * 2.5, vy: 1.5 + Math.random() * 3.5, vz: (Math.random() - .5) * 2, life: .9});
+  Sound.plop();
+  setTimeout(finish, 900);
+}
+const now = () => performance.now() / 1000;
+function finish(){
+  const skips = stone.skips, dist = Math.max(0, stone.z);
+  const rating = skips === 0 ? '扑通' : skips < 5 ? '还行' : skips < 12 ? '不错' : skips < 20 ? '漂亮' : skips < 28 ? '高手' : '水上漂';
+  const r = $('result');
+  r.querySelector('b').textContent = `${skips} 跳 · ${rating}`;
+  const tiltTxt = Math.abs(stone.tilt - 20) < 3 ? '角度正好' : stone.tilt < 20 ? `角度 ${stone.tilt.toFixed(0)}°，太平了` : `角度 ${stone.tilt.toFixed(0)}°，太斜了`;
+  r.querySelector('span').textContent = `${dist.toFixed(1)} 米 · 力度 ${Math.round(stone.power * 100)}% · ${tiltTxt}`;
+  r.classList.add('show');
+  const best = store.get('best', {skips: 0, dist: 0});
+  let rec = false;
+  if (skips > best.skips || (skips === best.skips && dist > best.dist)){ store.set('best', {skips, dist}); rec = skips > 0; }
+  if (!practice()){
+    daily.throws.push(skips);
+    daily.best = Math.max(daily.best, skips);
+    store.set('day:' + todayKey(), daily);
+    if (practice()) setTimeout(summary, 1600);
+  }
+  if (rec) Sound.record();
+  updateHud();
+  st = 'done';
+  camReturn = now();
+  setTimeout(() => { if (st === 'done'){ st = 'aim'; $('hint').textContent = practice() ? '随便扔，破纪录也算数' : '再扔一块'; $('hint').style.opacity = 1; } }, 1600);
+}
+function summary(){
+  const best = Math.max(...daily.throws);
+  const card = el('div', 'card');
+  card.append(el('h2', '', '今日三投'), el('div', 'n', best + ' 跳'), el('p', 'small', `${TODAY.stone.name} · ${TODAY.wind === 0 ? '无风' : '风 ' + Math.abs(TODAY.wind).toFixed(1)} · 三投：${daily.throws.join(' / ')}`));
+  const b = store.get('best', {skips: 0, dist: 0});
+  card.appendChild(el('p', 'small', `历史最好 ${b.skips} 跳 · ${b.dist.toFixed(1)} 米`));
+  const text = `打水漂 ${todayKey().slice(5).replace('-', '月')}日\n🪨${'〰️'.repeat(Math.min(10, Math.ceil(best / 3)))} ${best} 跳\n三投：${daily.throws.join(' / ')}`;
+  const row = el('div', 'row');
+  const sh = el('button', 'btn', '复制成绩'); sh.type = 'button'; sh.addEventListener('click', () => copy(text));
+  const go = el('button', 'btn ghost', '接着扔'); go.type = 'button'; go.addEventListener('click', closeModal);
+  row.append(sh, go);
+  card.append(row, el('p', 'small', '明天换一块石头、换一阵风'));
+  openModal(card);
+}
+function help(){
+  const card = el('div', 'card');
+  card.appendChild(el('h2', '', '怎么打水漂'));
+  const ul = el('ul');
+  for (const t of ['按住屏幕，下面的角度表会来回摆。', '手指往上一甩把石头扔出去：甩得越快力度越大，往左往右甩会偏。', '松手那一刻的角度很关键，20° 左右最好（绿色那一段），太平太斜都会很快沉下去。', '每天有一块不一样的石头、一阵不一样的风。三投里最好的一次算今天的成绩，之后可以随便扔。']) ul.appendChild(el('li', '', t));
+  const ok = el('button', 'btn', '去湖边'); ok.type = 'button'; ok.addEventListener('click', closeModal);
+  card.append(ul, ok);
+  openModal(card);
+}
+function copy(t){ const fb = () => { const ta = el('textarea'); ta.value = t; ta.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch (e){} ta.remove(); }; try { navigator.clipboard.writeText(t).catch(fb); } catch (e){ fb(); } }
+function openModal(card){ const m = $('modal'); m.replaceChildren(card); m.hidden = false; }
+function closeModal(){ $('modal').hidden = true; }
+
+/* ================= 每一帧 ================= */
+let last = performance.now();
+function frame(nowMs){
+  const t = nowMs / 1000, dt = Math.min(.05, (nowMs - last) / 1000);
+  last = nowMs;
+  if (st === 'fly' && stone){
+    const sub = 8;
+    // 物理时间比真实快一点，好的一投不用等太久
+    for (let k = 0; k < sub; k++) stepStone(stone, dt * 1.35 / sub, onSkip, onSink);
+    $('dist').textContent = Math.max(0, stone.z).toFixed(1) + ' 米';
+  }
+  // 镜头：飞的时候跟着石头，扔完慢慢回到岸边
+  const tz = st === 'fly' || (st === 'done' && now() - camReturn < 1.2) ? (stone ? Math.max(-3, stone.z - 7) : -3) : -3;
+  const tx = st === 'fly' && stone ? stone.x * .6 : 0;
+  const k = st === 'fly' ? 1 - Math.exp(-dt * 3) : 1 - Math.exp(-dt * 1.4);
+  cam.z += (tz - cam.z) * k; cam.x += (tx - cam.x) * k;
+  for (let i = drops.length - 1; i >= 0; i--){ const d = drops[i]; d.life -= dt; d.vy -= 9.8 * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt; if (d.life <= 0 || d.y < 0) drops.splice(i, 1); }
+  draw(t, dt);
+  requestAnimationFrame(frame);
+}
+function draw(t, dt){
+  const c = ctx;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  if (bg) c.drawImage(bg, 0, 0);
+  c.setTransform(S, 0, 0, S, 0, 0);
+  drawBirds(c, t, dt);
+  drawWater(c, t);
+  const pads = PADS.filter(p => p.z > cam.z + .3).sort((a, b) => b.z - a.z);
+  for (const p of pads) drawPad(c, p);
+  ripples = ripples.filter(r => drawRipple(c, r, now()));
+  for (const d of drops){ const q = proj(d.x, d.y, d.z); if (!q) continue; c.fillStyle = `rgba(235,245,255,${Math.min(1, d.life * 2)})`; c.beginPath(); c.arc(q.x, q.y, Math.max(.8, q.k * .03), 0, TAU); c.fill(); }
+  if (stone && (st === 'fly' || st === 'done')){
+    const sh = proj(stone.x, 0, stone.z), q = proj(stone.x, stone.y, stone.z);
+    if (q && stone.alive){
+      if (sh){ c.fillStyle = 'rgba(20,30,50,.3)'; c.beginPath(); c.ellipse(sh.x, sh.y, Math.max(1.5, sh.k * .06), Math.max(.6, F * CH * .06 / (sh.dz * sh.dz)), 0, 0, TAU); c.fill(); }
+      const r = Math.max(3.4, q.k * .07);
+      c.fillStyle = 'rgba(255,240,220,.35)'; c.beginPath(); c.arc(q.x, q.y, r * 2.2, 0, TAU); c.fill();
+      c.save(); c.translate(q.x, q.y); c.rotate(Math.sin(stone.spin) * .2);
+      const g = c.createRadialGradient(-r * .3, -r * .3, 0, 0, 0, r); g.addColorStop(0, TODAY.stone.col[0]); g.addColorStop(1, TODAY.stone.col[1]);
+      c.fillStyle = g; c.beginPath(); c.ellipse(0, 0, r, r * .45, 0, 0, TAU); c.fill();
+      c.restore();
+    }
+  }
+  drawReeds(c, t);
+  if (st === 'aim' || st === 'hold') drawHand(c, t);
+}
+// 手里的石头和角度表
+function drawHand(c, t){
+  const cx = 210, cy = 610, tilt = st === 'hold' ? tiltNow(t) : 20 + Math.sin(t * 1.5) * 2;
+  c.save(); c.translate(cx, cy);
+  c.fillStyle = 'rgba(20,20,30,.25)'; c.beginPath(); c.ellipse(0, 46, 70, 12, 0, 0, TAU); c.fill();
+  c.rotate(-tilt * Math.PI / 180);
+  const g = c.createRadialGradient(-14, -10, 2, 0, 0, 58);
+  g.addColorStop(0, TODAY.stone.col[0]); g.addColorStop(1, TODAY.stone.col[1]);
+  c.fillStyle = g; c.beginPath(); c.ellipse(0, 0, 54, 20, 0, 0, TAU); c.fill();
+  c.fillStyle = 'rgba(255,255,255,.18)'; c.beginPath(); c.ellipse(-12, -7, 22, 6, 0, 0, TAU); c.fill();
+  c.strokeStyle = 'rgba(0,0,0,.2)'; c.lineWidth = 1.5; c.beginPath(); c.ellipse(0, 0, 54, 20, 0, 0, TAU); c.stroke();
+  c.restore();
+  // 角度表：0 到 50 度的一段弧，20 度附近是绿色
+  const ax = cx, ay = cy + 6, R = 92;
+  c.save();
+  c.lineCap = 'round';
+  c.strokeStyle = 'rgba(255,248,238,.3)'; c.lineWidth = 10;
+  c.beginPath(); c.arc(ax, ay, R, -50 * Math.PI / 180, 0); c.stroke();
+  c.strokeStyle = 'rgba(120,220,150,.85)';
+  c.beginPath(); c.arc(ax, ay, R, -25 * Math.PI / 180, -15 * Math.PI / 180); c.stroke();
+  const a = -tilt * Math.PI / 180;
+  c.strokeStyle = '#fff8ee'; c.lineWidth = 3;
+  c.beginPath(); c.moveTo(ax + Math.cos(a) * (R - 22), ay + Math.sin(a) * (R - 22)); c.lineTo(ax + Math.cos(a) * (R + 10), ay + Math.sin(a) * (R + 10)); c.stroke();
+  c.fillStyle = '#fff8ee'; c.font = '600 14px "Noto Serif SC", serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillText(Math.round(tilt) + '°', ax + Math.cos(a) * (R + 26), ay + Math.sin(a) * (R + 26));
+  c.restore();
+}
+
+/* ================= 声音 ================= */
+const Sound = (() => {
+  let ac = null, out, nb, amb = null;
+  const A = {on: store.get('sound', true) !== false};
+  A.unlock = () => {
+    if (ac){ if (ac.state === 'suspended') ac.resume(); return; }
+    try {
+      ac = new (window.AudioContext || window.webkitAudioContext)(); out = ac.createGain(); out.gain.value = A.on ? .8 : 0; out.connect(ac.destination);
+      nb = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate); const d = nb.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      // 湖水轻轻拍岸
+      const s = ac.createBufferSource(); s.buffer = nb; s.loop = true;
+      const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 500;
+      const g = ac.createGain(); g.gain.value = .025;
+      const lfo = ac.createOscillator(); lfo.frequency.value = .18; const lg = ac.createGain(); lg.gain.value = .018; lfo.connect(lg); lg.connect(g.gain);
+      s.connect(f); f.connect(g); g.connect(out); s.start(); lfo.start();
+      setInterval(() => { if (A.on && Math.random() < .5) A.bird(); }, 7000);
+    } catch (e){}
+  };
+  const tone = (f, d = .3, g = .12, type = 'sine', t = 0, f2) => { if (!ac || !A.on) return; const t0 = ac.currentTime + t, o = ac.createOscillator(), e = ac.createGain(); o.type = type; o.frequency.setValueAtTime(f, t0); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t0 + d); e.gain.setValueAtTime(.0001, t0); e.gain.linearRampToValueAtTime(g, t0 + .004); e.gain.exponentialRampToValueAtTime(.0001, t0 + d); o.connect(e); e.connect(out); o.start(t0); o.stop(t0 + d + .05); };
+  const noise = (d, g, f1, f2, type = 'bandpass', t = 0) => { if (!ac || !A.on) return; const t0 = ac.currentTime + t, s = ac.createBufferSource(); s.buffer = nb; const f = ac.createBiquadFilter(); f.type = type; f.frequency.setValueAtTime(f1, t0); f.frequency.exponentialRampToValueAtTime(f2, t0 + d); const e = ac.createGain(); e.gain.setValueAtTime(.0001, t0); e.gain.linearRampToValueAtTime(g, t0 + .005); e.gain.exponentialRampToValueAtTime(.0001, t0 + d); s.connect(f); f.connect(e); e.connect(out); s.start(t0); s.stop(t0 + d + .05); };
+  const PENTA = [0, 2, 4, 7, 9];
+  A.skip = n => { const i = n - 1, f = 392 * Math.pow(2, (Math.floor(i / 5) * 12 + PENTA[i % 5]) / 12); tone(Math.min(f, 2400), .25, .1); noise(.08, .12, 3000, 1500); };
+  A.plop = () => { tone(260, .3, .2, 'sine', 0, 70); noise(.4, .18, 1200, 300, 'lowpass'); };
+  A.whoosh = p => noise(.35, .12 + p * .1, 600, 3000);
+  A.record = () => [784, 988, 1175, 1568].forEach((f, k) => tone(f, .6, .07, 'triangle', .3 + k * .1));
+  A.bird = () => { const b = 2200 + Math.random() * 800; tone(b, .08, .03, 'sine', 0, b * 1.3); tone(b * 1.1, .1, .03, 'sine', .12, b * .9); };
+  A.set = v => { A.on = v; store.set('sound', v); if (out) out.gain.value = v ? .8 : 0; };
+  return A;
+})();
+$('btnSound').addEventListener('click', () => { Sound.unlock(); Sound.set(!Sound.on); $('btnSound').textContent = Sound.on ? '🔊' : '🔇'; });
+$('btnSound').textContent = Sound.on ? '🔊' : '🔇';
+$('btnHelp').addEventListener('click', help);
+
+/* ================= 开机 ================= */
+try { await document.fonts.load('40px "Ma Shan Zheng"', '打水漂跳扑通还行不错漂亮高手水上0123456789'); } catch (e){}
+layout();
+updateHud();
+requestAnimationFrame(frame);
+if (!store.get('seenHelp', false)){ store.set('seenHelp', true); help(); }
+if (['localhost', '127.0.0.1'].includes(location.hostname)) window.__s = {throwStone, get stone(){ return stone; }, get st(){ return st; }, TODAY, makeStone, stepStone, shot: () => cv.toDataURL('image/jpeg', .8)};
+})();
+</script>
+
+</html>
